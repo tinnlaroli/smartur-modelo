@@ -1,2 +1,12 @@
 venv/
 __pycache__/
+
+node_modules/
+
+pnpm-lock.yaml
+
+.gitignore
+
+__pycache__/
+
+dist/
