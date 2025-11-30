@@ -50,6 +50,7 @@ else:
     users_df = pd.read_csv(USERS_CSV)
     print(f"✔ users.csv cargado con {len(users_df)} usuarios")
 
+
 # Construir distribución de popularidad para muestrear items (usa N si existe, sino R)
 if 'N' in items.columns and items['N'].sum() > 0:
     pop_weights = items['N'].astype(float).values
@@ -74,15 +75,61 @@ for _, row in items.iterrows():
 # Generar ratings
 rows = []
 total_interactions = 0
+# NUEVO: Sesgo contextual basado en intereses del usuario
 for _, urow in users_df.iterrows():
     uid = int(urow['user_id'])
-    # nº de ratings por usuario: Poisson alrededor de AVG_RATINGS_PER_USER, con min 5
+    
+    # Extraer intereses del usuario
+    user_interests = set()
+    if 'interests' in urow and pd.notna(urow['interests']):
+        user_interests = set(str(urow['interests']).split(';'))
+    
+    # Presupuesto preferido del usuario
+    user_budget_pref = urow.get('budget_pref', 'med')
+    user_actividad_pref = urow.get('actividad_pref', 3)
+    
+    # n ratings por usuario
     n = np.random.poisson(AVG_RATINGS_PER_USER)
     n = int(np.clip(n, 5, MAX_RATINGS_PER_USER))
-    # usuario tiene un sesgo personal (usuario más crítico o generoso)
-    user_bias = np.random.normal(0.0, 0.35)  # desviación estándar razonable
-    # elegir n items, con reemplazo = False
-    choices = np.random.choice(item_ids, size=min(n, len(item_ids)), replace=False, p=pop_p)
+    
+    # Sesgo personal del usuario
+    user_bias = np.random.normal(0.0, 0.35)
+    
+    # NUEVO: Calcular pesos de items basados en afinidad contextual
+    item_weights = []
+    for idx, item_row in items.iterrows():
+        weight = pop_weights[idx]  # peso base por popularidad
+        
+        # Boost si coincide con intereses
+        item_tags = str(item_row.get('tags', '')).split(',')
+        matches = user_interests.intersection(set(item_tags))
+        if matches:
+            weight *= (1.5 ** len(matches))  # boost exponencial
+        
+        # Boost si coincide presupuesto
+        item_price = float(item_row.get('price', 500))
+        if user_budget_pref == 'low' and item_price < 500:
+            weight *= 1.3
+        elif user_budget_pref == 'high' and item_price > 1500:
+            weight *= 1.3
+        elif user_budget_pref == 'med' and 500 <= item_price <= 1500:
+            weight *= 1.2
+        
+        # Boost si coincide nivel de actividad
+        item_actividad = int(item_row.get('actividad_level', 3))
+        if abs(item_actividad - user_actividad_pref) <= 1:
+            weight *= 1.4
+        
+        item_weights.append(weight)
+    
+    # Normalizar pesos
+    item_weights = np.array(item_weights)
+    item_weights = np.clip(item_weights, a_min=0.01, a_max=None)
+    item_p = item_weights / item_weights.sum()
+    
+    # Elegir items con pesos ajustados
+    choices = np.random.choice(item_ids, size=min(n, len(item_ids)), replace=False, p=item_p)
+    
     for it in choices:
         base = 3.0  # centro
         ibias = item_bias_map.get(int(it), 0.0)

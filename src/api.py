@@ -62,20 +62,29 @@ def load_csv_safe(path: str) -> pd.DataFrame:
 
 # Attempt to load artifacts on startup (if missing, endpoints will return helpful error)
 try:
+    # Cargar CSVs SIN preprocesar (para filtrado contextual)
     items_df = load_csv_safe(ITEMS_CSV)
     users_df = load_csv_safe(USERS_CSV)
     ratings_df = load_csv_safe(RATINGS_CSV)
+    
+    # Verificar que price está en rango correcto
+    logger.info(f"Items: {len(items_df)}, Users: {len(users_df)}, Ratings: {len(ratings_df)}")
+    if 'price' in items_df.columns:
+        logger.info(f"Price range: {items_df['price'].min():.2f} - {items_df['price'].max():.2f} MXN")
+    
+    # Cargar RF model
     rf_model, rf_features = None, None
     try:
         rf_model, rf_features = _load_rf_model(RF_MODEL_PATH)
         logger.info("RF model cargado ok.")
     except Exception as e:
         logger.warning(f"RF model no cargado: {e}")
+    
+    # Cargar cognitive artifacts
     users_list = np.load(USERS_LIST_NPY, allow_pickle=True) if os.path.exists(USERS_LIST_NPY) else np.array([])
     user_sim = np.load(USER_SIM_NPY) if os.path.exists(USER_SIM_NPY) else np.array([[]])
-    logger.info(f"Items: {len(items_df)}, Users: {len(users_df)}, Ratings: {len(ratings_df)}")
+    
 except FileNotFoundError as e:
-    # delays startup but still allow server to run with errors handled per endpoint
     logger.warning(f"CSV faltante: {e}")
     items_df = pd.DataFrame()
     users_df = pd.DataFrame()
@@ -127,7 +136,11 @@ def recommend_endpoint(
 
     # Candidate pool
     try:
-        candidate_ids = candidate_pool_by_popularity_and_category(user_id, items_df, ratings_df, users_df, top_n=candidates)
+        candidate_ids = candidate_pool_by_popularity_and_category(
+            user_id, items_df, ratings_df, users_df, 
+            context=None,  # GET no tiene context, o puedes extraerlo de Query params
+            top_n=candidates
+        )
     except Exception as e:
         logger.exception("Error generando candidate pool")
         candidate_ids = items_df['item_id'].tolist()[:candidates]
@@ -146,7 +159,8 @@ def recommend_endpoint(
             alpha=alpha,
             candidate_pool_fn=lambda uid: candidate_ids,
             top_n_candidates=len(candidate_ids),
-            k_cf=k_cf
+            k_cf=k_cf,
+            context=None  # <-- Sin context en GET
         )
     except Exception as e:
         logger.exception("Error al generar recomendaciones")
@@ -201,15 +215,18 @@ def recommend_endpoint_post(user_id: int, payload: RecommendPayload):
     # Log del contexto recibido (útil para debug)
     logger.info(f"[POST /recommend] user_id={user_id} alpha={payload.alpha} candidates={payload.candidates} k_cf={payload.k_cf} context_keys={list((payload.context or {}).keys())}")
 
-    # Candidate pool — por ahora reusamos la misma función; si quieres, en el futuro
-    # puedes usar 'payload.context' para crear pools-contextuales.
+    # Candidate pool con context
     try:
-        candidate_ids = candidate_pool_by_popularity_and_category(user_id, items_df, ratings_df, users_df, top_n=payload.candidates)
+        candidate_ids = candidate_pool_by_popularity_and_category(
+            user_id, items_df, ratings_df, users_df, 
+            context=payload.context,  # <-- PASAR CONTEXT
+            top_n=payload.candidates
+        )
     except Exception as e:
         logger.exception("Error generando candidate pool")
         candidate_ids = items_df['item_id'].tolist()[:payload.candidates]
 
-    # Ejecutar recommend_top3 igual que GET
+    # Ejecutar recommend_top3 con context
     try:
         recs = recommend_top3(
             user_id=user_id,
@@ -224,7 +241,7 @@ def recommend_endpoint_post(user_id: int, payload: RecommendPayload):
             candidate_pool_fn=lambda uid: candidate_ids,
             top_n_candidates=len(candidate_ids),
             k_cf=payload.k_cf,
-            # si quieres que recommend_top3 acepte context en el futuro, agrega parámetro aquí
+            context=payload.context  # <-- PASAR CONTEXT
         )
     except Exception as e:
         logger.exception("Error al generar recomendaciones (POST)")

@@ -22,27 +22,41 @@ def _make_onehot_encoder(**kwargs):
         # versiones antiguas usan 'sparse'
         return OneHotEncoder(sparse=False, **{k: v for k, v in kwargs.items()})
 
+
 def preprocess_items(items: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     df = items.copy()
-    # ensure required cols
-    for c in ['R','K','N']:
+    
+    # Campos para normalizar (SIN price)
+    for c in ['R','K','N','actividad_level']:
         if c not in df.columns:
             df[c] = 0.0
+    
     df['logN'] = safe_log1p_series(df['N'])
-    # fill price if missing
+    
+    # Normalizar SOLO estos campos (NO price)
+    scaler = MinMaxScaler()
+    num_cols = ['R', 'K', 'logN', 'actividad_level']
+    df[num_cols] = scaler.fit_transform(df[num_cols].astype(float).fillna(0.0))
+    
+    # price se queda en MXN original para filtrado
     if 'price' not in df.columns:
         df['price'] = 0.0
-    df[['R','K','logN','price']] = df[['R','K','logN','price']].astype(float).fillna(0.0)
-
-    scaler = MinMaxScaler()
-    df[['R','K','logN','price']] = scaler.fit_transform(df[['R','K','logN','price']])
-
-    # category / type one-hot
+    df['price'] = df['price'].astype(float).fillna(0.0)
+    
+    # Campos booleanos
+    for c in ['outdoor', 'accesible']:
+        if c not in df.columns:
+            df[c] = 0
+    
+    # outdoor y accesible se quedan como int (0/1)
+    df['outdoor'] = df['outdoor'].fillna(0).astype(int)
+    df['accesible'] = df['accesible'].fillna(0).astype(int)
+    
+    # One-hot de type
     enc = None
     if 'type' in df.columns:
         enc = _make_onehot_encoder(handle_unknown='ignore')
         cat = enc.fit_transform(df[['type']].fillna('unknown'))
-        # cat may be numpy array
         cat_names = [f"type_{c}" for c in enc.categories_[0]]
         cat_df = pd.DataFrame(cat, columns=cat_names, index=df.index)
         df = pd.concat([df.reset_index(drop=True), cat_df.reset_index(drop=True)], axis=1)
@@ -50,6 +64,8 @@ def preprocess_items(items: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     artifacts = {'scaler_items': scaler, 'enc_type': enc}
     joblib.dump(artifacts, MODEL_ARTIFACT)
     return df, artifacts
+
+
 
 def preprocess_users(users: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     df = users.copy()
