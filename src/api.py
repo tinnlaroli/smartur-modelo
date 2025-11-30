@@ -165,6 +165,84 @@ def recommend_endpoint(
 
     return RecommendationResponse(user_id=user_id, recommendations=out, alpha=alpha, candidate_pool=len(candidate_ids))
 
+
+from pydantic import BaseModel
+from typing import Any, Dict, Optional
+
+# ----------------------------
+# Request model for POST /recommend/{user_id}
+# ----------------------------
+class RecommendPayload(BaseModel):
+    alpha: float = 0.6
+    candidates: int = 200
+    k_cf: int = 20
+    context: Optional[Dict[str, Any]] = None
+
+@app.post("/recommend/{user_id}", response_model=RecommendationResponse)
+def recommend_endpoint_post(user_id: int, payload: RecommendPayload):
+    """
+    Acepta un body JSON con {alpha, candidates, k_cf, context}
+    y devuelve la misma estructura que el GET.
+    (Actualmente reusa la lógica de recommend_top3)
+    """
+    # validaciones similares al GET
+    if users_df.empty or items_df.empty or ratings_df.empty:
+        raise HTTPException(status_code=500, detail="Datasets no cargados. Ejecuta preprocessing y carga CSVs en data/")
+
+    if user_id not in users_df['user_id'].values:
+        raise HTTPException(status_code=404, detail=f"Usuario {user_id} no encontrado")
+
+    if rf_model is None:
+        raise HTTPException(status_code=500, detail="Modelo RF no disponible. Entrena y coloca models/rf_model.joblib")
+
+    if users_list.size == 0 or user_sim.size == 0:
+        raise HTTPException(status_code=500, detail="Artefactos cognitivos no disponibles. Ejecuta src.cognitive")
+
+    # Log del contexto recibido (útil para debug)
+    logger.info(f"[POST /recommend] user_id={user_id} alpha={payload.alpha} candidates={payload.candidates} k_cf={payload.k_cf} context_keys={list((payload.context or {}).keys())}")
+
+    # Candidate pool — por ahora reusamos la misma función; si quieres, en el futuro
+    # puedes usar 'payload.context' para crear pools-contextuales.
+    try:
+        candidate_ids = candidate_pool_by_popularity_and_category(user_id, items_df, ratings_df, users_df, top_n=payload.candidates)
+    except Exception as e:
+        logger.exception("Error generando candidate pool")
+        candidate_ids = items_df['item_id'].tolist()[:payload.candidates]
+
+    # Ejecutar recommend_top3 igual que GET
+    try:
+        recs = recommend_top3(
+            user_id=user_id,
+            ratings_df=ratings_df,
+            users_df=users_df,
+            items_df=items_df,
+            users_list=users_list,
+            sim_matrix=user_sim,
+            rf_model=rf_model,
+            rf_features=rf_features,
+            alpha=payload.alpha,
+            candidate_pool_fn=lambda uid: candidate_ids,
+            top_n_candidates=len(candidate_ids),
+            k_cf=payload.k_cf,
+            # si quieres que recommend_top3 acepte context en el futuro, agrega parámetro aquí
+        )
+    except Exception as e:
+        logger.exception("Error al generar recomendaciones (POST)")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    out = []
+    for r in recs:
+        out.append(RecItem(
+            item_id=int(r['item_id']),
+            title=r.get('title', None),
+            score=float(r['score']),
+            pred_cf=float(r['pred_cf']),
+            pred_rf=float(r['pred_rf'])
+        ))
+
+    return RecommendationResponse(user_id=user_id, recommendations=out, alpha=payload.alpha, candidate_pool=len(candidate_ids))
+
+
 # Run with: uvicorn src.api:app --host 0.0.0.0 --port 8000
 if __name__ == "__main__":
     import uvicorn
