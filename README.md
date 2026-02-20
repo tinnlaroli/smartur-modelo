@@ -1,248 +1,114 @@
-# SMARTUR Recommender System
+# SMARTUR - Sistema de Recomendación (Motor Yelp)
 
-Sistema de recomendación híbrido que combina modelos cognitivos basados en contenido, filtrado colaborativo y ranking de preferencias mediante aprendizaje por pares.
+SMARTUR es un pipeline de recomendación híbrido que integra múltiples técnicas de machine learning para generar sugerencias personalizadas utilizando el dataset de Yelp. El sistema combina modelos cognitivos, filtrado colaborativo y ranking de preferencias para ofrecer resultados precisos.
 
-## Descripción
+## Algoritmos y Características
 
-SMARTUR es un pipeline de recomendación que integra múltiples técnicas de machine learning para generar recomendaciones personalizadas. El sistema combina:
+El núcleo del motor de recomendación se basa en los siguientes algoritmos:
 
-- Modelo cognitivo basado en contenido (TF-IDF y similitud coseno)
-- Filtrado colaborativo (ALS y LightFM)
-- Ranking de preferencias (Random Forest para comparaciones por pares)
-- Fusión híbrida de modelos con pesos configurables
+- **Coeficiente de Correlación de Pearson** para medir la similitud usuario-ítem.
+- **K-Nearest Neighbors (KNN)** para encontrar perfiles similares.
+- **Random Forest Regressor** para el ranking de preferencias basado en contexto.
 
 ## Requisitos Previos
 
 - Python 3.8 o superior
-- pip (gestor de paquetes de Python)
-
-## Instalación
-
-### 1. Crear entorno virtual
-
-```bash
-python -m venv venv
-```
-
-### 2. Activar entorno virtual
-
-**Linux/Mac:**
-
-```bash
-source venv/bin/activate
-```
-
-**Windows:**
-
-```bash
-venv\Scripts\activate
-```
-
-### 3. Instalar dependencias
-
-```bash
-pip install -r requirements.txt
-```
-
-## Estructura de Datos
-
-Coloca tus archivos CSV en el directorio `data/` con la siguiente estructura:
-
-### items.csv
-
-Columnas requeridas: `item_id`, `nombre`, `tipo`, `categoria`, `subcategoria`, `precio_promedio`, `ubicacion`, `valoracion_promedio`, `caracteristicas`
-
-### users.csv
-
-Columnas requeridas: `user_id`, `edad`, `genero`, `ubicacion`, `preferencias`, `historial_busquedas`
-
-### ratings.csv
-
-Columnas requeridas: `user_id`, `item_id`, `rating`, `fecha`, `contexto`
-
-### pairs_feedback.csv
-
-Columnas requeridas: `user_id`, `item_a`, `item_b`, `seleccionado`, `fecha`
-
-## Flujo de Ejecución
-
-Sigue estos pasos en orden para configurar y ejecutar el sistema:
-
-### 1. Preprocesamiento de datos
-
-Prepara y normaliza los datos de entrada:
-
-```bash
-python -m src.preprocess
-```
-
-Este paso genera las características preprocesadas para usuarios e items, y crea la matriz de interacciones.
-
-### 2. Construcción del modelo cognitivo
-
-Construye la matriz de similitud basada en contenido:
-
-```bash
-python -m src.cognitive
-```
-
-### 3. Entrenamiento del modelo de ranking
-
-Entrena el modelo Random Forest para comparaciones por pares:
-
-```bash
-python -m src.rf_model
-```
-
-Esto generará `models/rf_model.joblib` si hay datos suficientes en `pairs_feedback.csv`.
-
-### 4. Iniciar la API
-
-Ejecuta el servidor de la API REST:
-
-```bash
-python -m src.api
-```
-
-O usando uvicorn (si está configurado):
-
-```bash
-uvicorn src.api:app --host 0.0.0.0 --port 8000
-```
-
-La API estará disponible en `http://localhost:5000` (Flask) o `http://localhost:8000` (uvicorn).
-
-## Uso de la API
-
-### Obtener recomendaciones para un usuario
-
-```bash
-GET http://localhost:5000/recommend/{user_id}?top_n=10
-```
-
-**Ejemplo:**
-
-```bash
-curl http://localhost:5000/recommend/1?top_n=10
-```
-
-### Obtener items similares
-
-```bash
-GET http://localhost:5000/recommend/similar/{item_id}?top_n=10
-```
-
-### Enviar feedback
-
-```bash
-POST http://localhost:5000/feedback
-Content-Type: application/json
-
-{
-  "user_id": 1,
-  "item_id": 5,
-  "rating": 4,
-  "feedback": "positive"
-}
-```
-
-### Health check
-
-```bash
-GET http://localhost:5000/health
-```
+- Git
 
 ## Estructura del Proyecto
 
 ```text
 SMARTUR/
-├── data/                  # Archivos CSV de entrada
-│   ├── items.csv
-│   ├── users.csv
-│   ├── ratings.csv
-│   └── pairs_feedback.csv
-├── models/                # Modelos entrenados guardados
-│   ├── rf_model.joblib
-│   └── scalers_and_encoders.pkl
-├── notebooks/             # Notebooks de desarrollo
-│   └── dev_pipeline.ipynb
-├── src/                   # Código fuente
-│   ├── api.py            # API REST Flask
-│   ├── cf.py             # Filtrado colaborativo
-│   ├── cognitive.py      # Modelo cognitivo
-│   ├── fusion.py         # Fusión híbrida
-│   ├── preprocess.py     # Preprocesamiento
-│   ├── rf_model.py       # Modelo de ranking
-│   └── evaluate.py       # Evaluación de modelos
-├── tests/                # Tests unitarios
-│   └── test_module.py
-├── requirements.txt       # Dependencias Python
-└── README.md             # Este archivo
+├── data/                  # Almacena los archivos JSON originales de Yelp y los CSV procesados.
+├── models/                # Modelos entrenados exportados en formato .joblib.
+├── src/recommendation/    # Lógica central del motor, fusión de modelos y definiciones de la API.
+├── descargar_yelp.py      # Script para la descarga automatizada del dataset de Yelp.
+└── requirements.txt       # Dependencias del proyecto.
 ```
 
-## Testing
+## Guía de Instalación Paso a Paso
 
-Ejecuta los tests con pytest:
+### 1. Clonar el Repositorio y Preparar el Entorno
+
+Primero, clona el repositorio en tu máquina local y accede al directorio del proyecto:
 
 ```bash
-pytest -q
+git clone https://github.com/tinnlaroli/SMARTUR.git
+cd SMARTUR
 ```
 
-Para ejecutar tests con más detalle:
+Crea un entorno virtual (en este ejemplo lo llamaremos `modelo`):
 
 ```bash
-pytest -v
+python -m venv modelo
 ```
 
-## Configuración y Ajustes
+Activa el entorno virtual:
 
-### Parámetros del modelo
+**Windows:**
 
-Los siguientes parámetros pueden ajustarse en los módulos correspondientes:
+```bash
+.\modelo\Scripts\activate
+```
 
-- **Filtrado colaborativo**: número de factores, iteraciones, regularización (en `src/cf.py`)
-- **Modelo cognitivo**: parámetros de TF-IDF, número de características (en `src/cognitive.py`)
-- **Fusión híbrida**: pesos de combinación de modelos (en `src/fusion.py`)
-- **Random Forest**: número de estimadores, profundidad máxima (en `src/rf_model.py`)
+**Linux/macOS:**
 
-### Pesos de fusión por defecto
+```bash
+source modelo/bin/activate
+```
 
-- Modelo cognitivo: 0.3
-- Filtrado colaborativo: 0.4
-- Ranking: 0.3
+Instala las dependencias requeridas para el proyecto:
 
-Estos valores pueden ajustarse en `src/fusion.py` según el rendimiento observado.
+```bash
+pip install -r requirements.txt
+```
 
-## Notas de Producción
+### 2. Descargar el Dataset de Yelp
 
-Para un entorno de producción, considera implementar:
+Para alimentar el modelo con datos reales, es necesario descargar el dataset oficial de Yelp. Ejecuta el siguiente script desde la raíz del proyecto:
 
-- Generación de candidatos más sofisticada (FAISS para búsqueda vectorial)
-- Filtros de proximidad geográfica
-- Caché de recomendaciones para mejorar rendimiento
-- Sistema de logging estructurado
-- Monitoreo de métricas de recomendación
-- Re-entrenamiento periódico de modelos
-- Manejo robusto de usuarios nuevos (cold start)
+```bash
+python descargar_yelp.py
+```
 
-## Troubleshooting
+> **Nota:** El dataset tiene un peso aproximado de 4GB comprimido. Una vez finalizada la descarga, asegúrate de extraer y mover los archivos `yelp_academic_dataset_business.json` y `yelp_academic_dataset_review.json` a la carpeta `data/` del proyecto.
 
-### Error al cargar modelos
+### 3. Pre-procesamiento y Limpieza de Datos
 
-Asegúrate de haber ejecutado los pasos de preprocesamiento y entrenamiento antes de iniciar la API.
+Para evitar saturar la memoria RAM y optimizar los datos crudos (~5GB), es necesario filtrarlos a un formato estandarizado y más ligero. Dirígete a la carpeta del motor y ejecuta el script de limpieza:
 
-### Error de imports
+```bash
+cd src/recommendation
+python pre_procesamiento.py
+```
 
-Si encuentras errores de imports, verifica que estés ejecutando desde el directorio raíz del proyecto y que el entorno virtual esté activado.
+Este proceso generará los archivos `data_negocios_limpio.csv` y `data_reviews_limpio.csv` dentro de la carpeta `data/`.
 
-### Datos insuficientes
+## Ejecución del Modelo
 
-Algunos modelos requieren una cantidad mínima de datos. Si no hay suficientes ratings o pares de feedback, algunos componentes pueden no entrenarse correctamente.
+### Modo Consola (Prueba Rápida)
 
-## Licencia
+Para verificar que el motor basado en Pearson y el Random Forest están funcionando correctamente a través de la consola, puedes ejecutar el script principal:
 
-[Especificar licencia si aplica]
+```bash
+# Asegúrate de estar en el directorio src/recommendation
+python main.py
+```
 
-## Contacto
+### Modo API (Servidor de Producción)
 
-[Información de contacto del proyecto]
+Para levantar el servicio web (útil para ser consumido por un frontend o aplicación cliente), inicia el servidor FastAPI utilizando Uvicorn:
+
+```bash
+# Asegúrate de estar en el directorio src/recommendation
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+Una vez que el servidor esté en ejecución, podrás acceder a la documentación interactiva de la API (Swagger UI) en el navegador: `http://localhost:8000/docs`
+
+## Métricas de Rendimiento
+
+El sistema ha sido evaluado con el dataset de Yelp, alcanzando las siguientes métricas de validación:
+
+- **RMSE (Error Cuadrático Medio):** ~1.30
+- **MAE (Error Absoluto Medio):** ~1.06
