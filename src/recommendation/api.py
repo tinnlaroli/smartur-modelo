@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Importamos tus nuevos módulos
+# Importamos tus módulos
 from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from fusion import recommend_hybrid
@@ -19,7 +19,7 @@ logger = logging.getLogger("smartur-api")
 
 app = FastAPI(title="SMARTUR Recommender API v2", version="2.0")
 
-# CORS
+# CORS - Asegúrate de que permita el puerto de tu React (ej. 5173 o 3000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,20 +28,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Modelos de Datos (Pydantic) ---
 class RecItem(BaseModel):
-    business_id: str
-    final_score: float
-    cf_part: float
-    rf_part: float
+    item_id: str      
+    title: str        
+    score: float      
+    pred_cf: float    
+    pred_rf: float    
 
 class RecommendationResponse(BaseModel):
     user_id: str
     recommendations: List[RecItem]
     alpha: float
 
-# --- Estado Global de los Modelos ---
-# Inicializamos como None para cargarlos al arrancar
+class RecommendRequest(BaseModel):
+    alpha: float = 0.7
+    context: Optional[Dict[str, Any]] = None
+
 engine = None
 context_model = None
 
@@ -56,7 +58,6 @@ def startup_event():
         
         logger.info("Cargando Modelo de Contexto (Random Forest)...")
         context_model = SmarturContextModel()
-        # Entrenamos con la data cargada en el engine
         context_model.train(engine.train_data)
         
         logger.info("¡SMARTUR v2 listo para recibir peticiones!")
@@ -67,36 +68,60 @@ def startup_event():
 def health():
     return {
         "status": "ok",
-        "engine_ready": engine is not None and engine.user_item_matrix is not None,
-        "rf_ready": context_model is not None and context_model.model is not None,
+        "engine_ready": engine is not None,
+        "rf_ready": context_model is not None,
         "users_count": len(engine.user_item_matrix.index) if engine else 0
     }
 
+# Endpoint GET (para pruebas rápidas sin formulario)
 @app.get("/recommend/{user_id}", response_model=RecommendationResponse)
 def get_recommendation(
     user_id: str, 
     alpha: float = Query(0.7, ge=0.0, le=1.0)
 ):
     if engine is None or context_model is None:
-        raise HTTPException(status_code=503, detail="Los modelos se están cargando o fallaron.")
+        raise HTTPException(status_code=503, detail="Modelos no cargados.")
 
     try:
-        # Usamos la lógica de fusión que ya probaste en main.py
         recs = recommend_hybrid(user_id, engine, context_model, alpha=alpha)
+        format_recs = [RecItem(**r) for r in recs]
+        return RecommendationResponse(user_id=user_id, recommendations=format_recs, alpha=alpha)
+    except Exception as e:
+        logger.error(f"Error en GET recommend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# NUEVO: Endpoint POST para el formulario de React
+@app.post("/recommend/{user_id}", response_model=RecommendationResponse)
+def post_recommendation(user_id: str, payload: RecommendRequest):
+    """
+    Recibe el contexto del MultiStepForm (presupuesto, tipos de turismo, etc.)
+    """
+    if engine is None or context_model is None:
+        raise HTTPException(status_code=503, detail="Modelos no cargados.")
+
+    try:
+        logger.info(f"Recomendación POST para usuario: {user_id}")
         
-        # Formatear respuesta según el modelo Pydantic
+        # Pasamos el payload.context a tu nueva lógica de fusion.py
+        recs = recommend_hybrid(
+            user_id=user_id, 
+            engine=engine, 
+            context_model=context_model, 
+            alpha=payload.alpha,
+            context=payload.context # <-- Aquí viajan los datos de Step1 a Step4
+        )
+        
         format_recs = [RecItem(**r) for r in recs]
         
         return RecommendationResponse(
             user_id=user_id,
             recommendations=format_recs,
-            alpha=alpha
+            alpha=payload.alpha
         )
     except Exception as e:
-        logger.error(f"Error al recomendar para {user_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error interno al generar recomendaciones.")
+        logger.error(f"Error en POST recommend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Ejecución (opcional, mejor usar uvicorn en terminal)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
