@@ -53,4 +53,7 @@ data/interim/
 data/processed/
 tmp/
 *.tmp
-
+data/data_negocios_limpio.csv
+data/data_reviews_limpio.csv
+data/yelp_academic_dataset_business.json
+data/yelp_academic_dataset_review.json
