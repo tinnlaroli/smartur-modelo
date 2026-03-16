@@ -1,114 +1,91 @@
-# SMARTUR - Sistema de Recomendación (Motor Yelp)
+# SMARTUR - Sistema de Recomendación Híbrido (Motor Yelp)
 
-SMARTUR es un pipeline de recomendación híbrido que integra múltiples técnicas de machine learning para generar sugerencias personalizadas utilizando el dataset de Yelp. El sistema combina modelos cognitivos, filtrado colaborativo y ranking de preferencias para ofrecer resultados precisos.
+SMARTUR es un sistema de recomendación híbrido que combina **Filtrado Colaborativo (Pearson + KNN)** con **Random Forest contextual** para generar sugerencias personalizadas usando el dataset real de Yelp.
 
-## Algoritmos y Características
+## Algoritmos
 
-El núcleo del motor de recomendación se basa en los siguientes algoritmos:
-
-- **Coeficiente de Correlación de Pearson** para medir la similitud usuario-ítem.
+- **Correlación de Pearson** centrada para medir similitud usuario-usuario.
 - **K-Nearest Neighbors (KNN)** para encontrar perfiles similares.
-- **Random Forest Regressor** para el ranking de preferencias basado en contexto.
+- **Random Forest Regressor** con features de ubicación, categorías y popularidad para ranking contextual.
+- **Fusión Híbrida** con peso α configurable: `score = α·CF + (1−α)·RF`.
 
-## Requisitos Previos
+## Requisitos
 
-- Python 3.8 o superior
-- Git
+- Python 3.8+
+- ~4GB RAM disponible (la matriz User-Item es grande)
 
-## Estructura del Proyecto
+## Estructura
 
-```text
-SMARTUR/
-├── data/                  # Almacena los archivos JSON originales de Yelp y los CSV procesados.
-├── models/                # Modelos entrenados exportados en formato .joblib.
-├── src/recommendation/    # Lógica central del motor, fusión de modelos y definiciones de la API.
-├── descargar_yelp.py      # Script para la descarga automatizada del dataset de Yelp.
-└── requirements.txt       # Dependencias del proyecto.
+```
+MODELO/
+├── data/                    # CSVs procesados + JSON originales de Yelp
+├── models/                  # Modelos entrenados (.joblib)
+├── src/                     # Motor de recomendación
+│   ├── engine.py            # Pearson + KNN (matriz de utilidad)
+│   ├── cf.py                # Predicción CF por vecinos
+│   ├── rf_model.py          # Random Forest contextual (categorías + ubicación)
+│   ├── fusion.py            # Combinación híbrida + filtrado por contexto
+│   ├── evaluate.py          # Evaluación RMSE/MAE por componente
+│   ├── optimize_alpha.py    # Grid search para α óptimo
+│   ├── main.py              # Punto de entrada CLI
+│   ├── api.py               # API REST (FastAPI)
+│   └── pre_procesamiento.py # Filtrado de datos Yelp JSON → CSV
+├── tests/                   # Tests
+├── descargar_yelp.py        # Descarga automatizada del dataset
+└── requirements.txt         # Dependencias
 ```
 
-## Guía de Instalación Paso a Paso
-
-### 1. Clonar el Repositorio y Preparar el Entorno
-
-Primero, clona el repositorio en tu máquina local y accede al directorio del proyecto:
+## Instalación
 
 ```bash
 git clone https://github.com/tinnlaroli/SMARTUR.git
 cd SMARTUR
-```
-
-Crea un entorno virtual (en este ejemplo lo llamaremos `modelo`):
-
-```bash
 python -m venv modelo
-```
-
-Activa el entorno virtual:
-
-**Windows:**
-
-```bash
-.\modelo\Scripts\activate
-```
-
-**Linux/macOS:**
-
-```bash
-source modelo/bin/activate
-```
-
-Instala las dependencias requeridas para el proyecto:
-
-```bash
+.\modelo\Scripts\activate        # Windows
+# source modelo/bin/activate     # Linux/macOS
 pip install -r requirements.txt
 ```
 
-### 2. Descargar el Dataset de Yelp
-
-Para alimentar el modelo con datos reales, es necesario descargar el dataset oficial de Yelp. Ejecuta el siguiente script desde la raíz del proyecto:
+## Preparación de Datos
 
 ```bash
+# 1. Descargar dataset de Yelp (~4GB)
 python descargar_yelp.py
-```
 
-> **Nota:** El dataset tiene un peso aproximado de 4GB comprimido. Una vez finalizada la descarga, asegúrate de extraer y mover los archivos `yelp_academic_dataset_business.json` y `yelp_academic_dataset_review.json` a la carpeta `data/` del proyecto.
-
-### 3. Pre-procesamiento y Limpieza de Datos
-
-Para evitar saturar la memoria RAM y optimizar los datos crudos (~5GB), es necesario filtrarlos a un formato estandarizado y más ligero. Dirígete a la carpeta del motor y ejecuta el script de limpieza:
-
-```bash
-cd src/recommendation
+# 2. Mover los JSON a data/ y filtrar
+cd src
 python pre_procesamiento.py
 ```
 
-Este proceso generará los archivos `data_negocios_limpio.csv` y `data_reviews_limpio.csv` dentro de la carpeta `data/`.
-
-## Ejecución del Modelo
-
-### Modo Consola (Prueba Rápida)
-
-Para verificar que el motor basado en Pearson y el Random Forest están funcionando correctamente a través de la consola, puedes ejecutar el script principal:
+## Ejecución
 
 ```bash
-# Asegúrate de estar en el directorio src/recommendation
+cd src
+
+# Modo consola (prueba rápida)
 python main.py
-```
 
-### Modo API (Servidor de Producción)
+# Evaluación de métricas (RMSE/MAE por componente)
+python evaluate.py
 
-Para levantar el servicio web (útil para ser consumido por un frontend o aplicación cliente), inicia el servidor FastAPI utilizando Uvicorn:
+# Optimización de α
+python optimize_alpha.py
 
-```bash
-# Asegúrate de estar en el directorio src/recommendation
+# Modo API (servidor)
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
-Una vez que el servidor esté en ejecución, podrás acceder a la documentación interactiva de la API (Swagger UI) en el navegador: `http://localhost:8000/docs`
+Swagger UI disponible en: `http://localhost:8000/docs`
 
 ## Métricas de Rendimiento
 
-El sistema ha sido evaluado con el dataset de Yelp, alcanzando las siguientes métricas de validación:
+Evaluadas sobre 1,000 muestras del 20% de test set (66K usuarios, 5K negocios):
 
-- **RMSE (Error Cuadrático Medio):** ~1.30
-- **MAE (Error Absoluto Medio):** ~1.06
+| Componente | RMSE | MAE |
+|---|---|---|
+| Baseline (media global) | 1.3690 | 1.1208 |
+| CF (Pearson + KNN) | 1.4165 | 1.1361 |
+| RF (Random Forest, 19 features) | 1.2746 | 1.0322 |
+| **Hibrido (alpha=0.1)** | **1.2755** | **1.0353** |
+
+Alpha optimizado via grid search (0.0 a 1.0). Ejecuta `python evaluate.py` o `python optimize_alpha.py` para regenerar.
