@@ -25,6 +25,7 @@ class SmarturContextModel:
         self.top_categories = []
         self.numeric_features = ['review_count', 'latitude', 'longitude', 'is_open']
         self.features = []  # se llena en _extract_top_categories
+        self.is_fitted = False
 
     def _extract_top_categories(self, df):
         """Encuentra las N categorías más frecuentes en el dataset."""
@@ -73,6 +74,7 @@ class SmarturContextModel:
             'top_categories': self.top_categories,
             'features': self.features,
         }, os.path.join(_MODELS, 'rf_context_yelp.joblib'))
+        self.is_fitted = True
         print("Random Forest contextual entrenado y guardado.")
 
     def load(self, model_path=None):
@@ -88,6 +90,7 @@ class SmarturContextModel:
             self.model = data['model']
             self.top_categories = data['top_categories']
             self.features = data['features']
+            self.is_fitted = True
             print("Random Forest contextual cargado desde disco.")
             return True
         return False

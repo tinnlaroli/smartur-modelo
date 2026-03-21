@@ -2,8 +2,6 @@ import logging
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 
-import numpy as np
-import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -43,13 +41,20 @@ async def lifespan(app: FastAPI):
         logger.info("SMARTUR v2 listo para recibir peticiones.")
     except Exception as e:
         logger.error(f"Error crítico en el arranque: {e}")
+        # Falla rápido y ruidosamente; previene iniciar en un estado degradado "zombie"
+        raise RuntimeError(f"Boot abortado: Los modelos no pudieron cargar ({e})")
     yield
 
 
 app = FastAPI(title="SMARTUR Recommender API v2", version="2.1", lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware,
+    # CORSMiddleware,
+    # allow_origins=[
+    #     "http://localhost",
+    #     "http://localhost:3000",
+    #     "http://localhost:8080",
+    # ],
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
@@ -85,8 +90,8 @@ def health():
     """
     return {
         "status": "ok",
-        "engine_ready": engine is not None,
-        "rf_ready": context_model is not None,
+        "engine_ready": engine is not None and engine.user_item_matrix is not None,
+        "rf_ready": context_model is not None and getattr(context_model, 'is_fitted', False),
         "users_count": engine.user_item_matrix.shape[0] if engine and engine.user_item_matrix is not None else 0,
     }
 
