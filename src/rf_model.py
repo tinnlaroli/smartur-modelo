@@ -10,6 +10,11 @@ _MODELS = os.path.join(_DIR, '..', 'models')
 TOP_N_CATEGORIES = 15
 
 class SmarturContextModel:
+    """
+    Modelo secundario contextual basado de forma algorítmica en Random Forest Regressor.
+    Este modelo permite ponderar variables externas del contexto (como categorías de los establecimientos y puntuaciones de review_count) 
+    para potenciar las sugerencias del sistema HÍBRIDO, solventando casos de interacciones puras muy dudosas en the Collaborative Filtering.
+    """
     def __init__(self, business_path=None):
         if business_path is None:
             business_path = os.path.join(_DATA, 'data_negocios_limpio.csv')
@@ -69,6 +74,23 @@ class SmarturContextModel:
             'features': self.features,
         }, os.path.join(_MODELS, 'rf_context_yelp.joblib'))
         print("Random Forest contextual entrenado y guardado.")
+
+    def load(self, model_path=None):
+        """
+        Intenta cargar y materializar en memoria un modelo Random Forest serializado
+        de forma binaria en disco para saltar por completo los altos tiempos de entrenamiento asíncrono.
+        Retorna True si un archivo modelo .joblib existía y operó con éxito.
+        """
+        if model_path is None:
+            model_path = os.path.join(_MODELS, 'rf_context_yelp.joblib')
+        if os.path.exists(model_path):
+            data = joblib.load(model_path)
+            self.model = data['model']
+            self.top_categories = data['top_categories']
+            self.features = data['features']
+            print("Random Forest contextual cargado desde disco.")
+            return True
+        return False
 
     def predict_context(self, business_ids):
         """Predicciones alineadas: el i-ésimo score corresponde al i-ésimo ID."""

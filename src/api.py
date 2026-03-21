@@ -8,6 +8,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+"""
+SMARTUR API Base File
+Define los Endpoints de recomendación mediante FastAPI.
+Conecta los flujos entre el Engine de Pearson y el Modelo Contextual de RF.
+"""
+
 from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from fusion import recommend_hybrid
@@ -30,7 +36,9 @@ async def lifespan(app: FastAPI):
 
         logger.info("Cargando Modelo de Contexto (Random Forest)...")
         context_model = SmarturContextModel()
-        context_model.train(engine.train_data)
+        if not context_model.load():
+            logger.info("Modelo de Random Forest no encontrado, entrenando ahora por única vez...")
+            context_model.train(engine.train_data)
 
         logger.info("SMARTUR v2 listo para recibir peticiones.")
     except Exception as e:
@@ -71,11 +79,15 @@ class RecommendRequest(BaseModel):
 
 @app.get("/health")
 def health():
+    """
+    Endpoint pasivo para sondear la disponibilidad y estado de carga de la API.
+    Aporta métricas rápidas del estado interno del Engine y el RandomForest en RAM.
+    """
     return {
         "status": "ok",
         "engine_ready": engine is not None,
         "rf_ready": context_model is not None,
-        "users_count": len(engine.user_item_matrix.index) if engine else 0,
+        "users_count": engine.user_item_matrix.shape[0] if engine and engine.user_item_matrix is not None else 0,
     }
 
 
@@ -124,6 +136,24 @@ def post_recommendation(user_id: str, payload: RecommendRequest):
         )
     except Exception as e:
         logger.error(f"Error en POST recommend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/train-rf")
+def train_rf():
+    """
+    Llamado bajo demanda de re-entrenamiento del Random Forest contextual.
+    Esto vuelve a generar el árbol utilizando datos actuales de la Base e ignora el archivo local previo, 
+    creando un fichero `.joblib` en disco en los procesos intermedios que quedará para los futuros arranques.
+    """
+    if engine is None or context_model is None:
+        raise HTTPException(status_code=503, detail="Modelos no cargados.")
+    try:
+        logger.info("Forzando entrenamiento del modelo Random Forest...")
+        context_model.train(engine.train_data)
+        return {"status": "ok", "message": "Modelo entrenado y guardado correctamente."}
+    except Exception as e:
+        logger.error(f"Error entrenando modelo: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
