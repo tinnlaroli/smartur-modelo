@@ -1,6 +1,6 @@
 import pytest
-from src.engine import SmarturEngine
-from src.rf_model import SmarturContextModel
+from engine import SmarturEngine
+from rf_model import SmarturContextModel
 
 def test_engine_instantiation():
     """Prueba básica para asegurar que el motor puede instanciarse correctamente."""

@@ -1,16 +1,48 @@
-from cf import predict_cf_pearson
+"""
+SMARTUR Fusion v3: Pipeline de dos etapas (Retrieval → Ranking).
 
-MAPEO_CATEGORIAS = {
-    'naturaleza': ['Parks', 'Botanical Gardens', 'Hiking', 'Landmarks & Historical Buildings', 'Lakes'],
-    'aventura': ['Active Life', 'Hiking', 'Rafting', 'Mountain Biking', 'Tours'],
-    'gastronomico': ['Restaurants', 'Food', 'Cafes', 'Traditional Mexican', 'Bakeries'],
-    'cultural': ['Museums', 'Art Galleries', 'Arts & Entertainment', 'Historical Tours', 'Festivals'],
-    'rural': ['Hotels', 'Bed & Breakfast', 'Campgrounds', 'Farm Stays', 'Guest Houses']
-}
+Fase A (Retrieval):
+  1. Pool amplio de ~200 candidatos vía KNN/Pearson
+  2. Filtro duro: elimina ítems que violen restricciones binarias
+  3. Filtro suave: prioriza categorías según tiposTurismo
+
+Fase B (Ranking):
+  1. RF contextual re-rankea con vector [Item + User + Interaction]
+  2. Blend final: α × CF_score + (1-α) × RF_contextual_score
+"""
+
+from cf import predict_cf_pearson
+from context_encoder import MAPEO_CATEGORIAS
+
+# ---------------------------------------------------------------------------
+# Filtros
+# ---------------------------------------------------------------------------
+
+def filtro_duro(biz_df, context):
+    """
+    Elimina candidatos que violen restricciones binarias del usuario.
+    Son condiciones de 'no-negociable' (deal-breakers).
+    """
+    if not context:
+        return biz_df
+
+    filtered = biz_df.copy()
+
+    # Accesibilidad: si el usuario la requiere, eliminar negocios sin ella
+    if context.get('requiere_accesibilidad') is True:
+        if 'is_accessible' in filtered.columns:
+            filtered = filtered[filtered['is_accessible'] == 1]
+
+    # Outdoor: si el usuario lo prefiere como requisito duro
+    if context.get('pref_outdoor') is True:
+        if 'outdoor' in filtered.columns:
+            filtered = filtered[filtered['outdoor'] == 1]
+
+    return filtered
 
 
 def filtrar_candidatos_por_contexto(biz_df, context):
-    """Filtra el DataFrame de negocios basado en el contexto del formulario React."""
+    """Filtro suave: prioriza negocios cuyas categorías coincidan con tiposTurismo."""
     if not context:
         return biz_df
 
@@ -24,36 +56,46 @@ def filtrar_candidatos_por_contexto(biz_df, context):
             mask = filtered_df['categories'].str.contains(
                 '|'.join(yelp_categories), case=False, na=False
             )
-            filtered_df = filtered_df[mask]
-
-    if context.get('pref_outdoor') is True:
-        outdoor_keywords = ['Parks', 'Outdoor', 'Hiking', 'Nature', 'Lakes']
-        mask = filtered_df['categories'].str.contains(
-            '|'.join(outdoor_keywords), case=False, na=False
-        )
-        filtered_df = filtered_df[mask]
+            # Si ningún candidato coincide, mantener todos (degradación graciosa)
+            if mask.any():
+                filtered_df = filtered_df[mask]
 
     return filtered_df
 
 
+# ---------------------------------------------------------------------------
+# Pipeline principal
+# ---------------------------------------------------------------------------
+
 def recommend_hybrid(user_id, engine, context_model, alpha=0.1, context=None, top_n=5):
     """
-    Sistema Híbrido SMARTUR v2:
-    1. Pool inicial vía KNN (Pearson).
-    2. Filtra candidatos por contexto del formulario React.
-    3. Re-rankea con RF + CF ponderados por alpha.
+    Sistema Híbrido SMARTUR v3 (Retrieval + Ranking).
+
+    1. Retrieval: pool de 200 candidatos vía KNN.
+    2. Filtro duro: restricciones binarias (accesibilidad, outdoor).
+    3. Filtro suave: categorías de turismo.
+    4. Ranking: RF contextual con vector [User + Item + Interaction].
+    5. Blend: α × CF + (1-α) × RF_contextual.
     """
-    candidate_ids = engine.get_candidate_pool(user_id, top_n=100)
+    # ── Fase A: Retrieval ────────────────────────────────────────────────
+    candidate_ids = engine.get_candidate_pool(user_id, top_n=200)
     biz_candidates = engine.df_biz[engine.df_biz['business_id'].isin(candidate_ids)]
 
-    refined_df = filtrar_candidatos_por_contexto(biz_candidates, context)
+    # Filtro duro (restricciones binarias)
+    refined_df = filtro_duro(biz_candidates, context)
 
+    # Filtro suave (categorías de turismo)
+    refined_df = filtrar_candidatos_por_contexto(refined_df, context)
+
+    # Fallback: si todos los filtros vaciaron la lista, usar pool crudo
     if refined_df.empty:
         final_ids = candidate_ids
     else:
         final_ids = refined_df['business_id'].tolist()
 
-    rf_scores = context_model.predict_context(final_ids)
+    # ── Fase B: Ranking ──────────────────────────────────────────────────
+    # RF contextual: usa vector completo si hay contexto del turista
+    rf_scores = context_model.predict_with_context(final_ids, user_context=context)
     rf_map = dict(zip(final_ids, rf_scores))
 
     recommendations = []

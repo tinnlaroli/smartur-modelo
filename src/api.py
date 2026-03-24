@@ -49,11 +49,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SMARTUR Recommender API v2", version="2.1", lifespan=lifespan)
 
 app.add_middleware(
-    # CORSMiddleware,
+    CORSMiddleware,
     # allow_origins=[
     #     "http://localhost",
-    #     "http://localhost:3000",
-    #     "http://localhost:8080",
+    #     ...
     # ],
     allow_origins=["*"],
     allow_credentials=True,
