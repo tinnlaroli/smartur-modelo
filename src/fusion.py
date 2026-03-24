@@ -38,6 +38,16 @@ def filtro_duro(biz_df, context):
         if 'outdoor' in filtered.columns:
             filtered = filtered[filtered['outdoor'] == 1]
 
+    # Hotel: si el usuario lo necesita como base
+    if context.get('needs_hotel') is True:
+        mask = filtered['categories'].str.contains('Hotels & Travel|Hotels', case=False, na=False)
+        filtered = filtered[mask]
+
+    # Comida: si el usuario NO quiere comida
+    if context.get('pref_food') is False:
+        mask = ~filtered['categories'].str.contains('Restaurants|Food', case=False, na=False)
+        filtered = filtered[mask]
+
     return filtered
 
 

@@ -35,6 +35,22 @@ def _parse_price_level(attributes):
         return 2
 
 
+def _parse_ambience_romantic(attributes):
+    """Extrae si el ambiente es romántico o íntimo."""
+    if not attributes or not isinstance(attributes, dict):
+        return 0
+    ambience = attributes.get('Ambience')
+    if not ambience or not isinstance(ambience, str):
+        return 0
+    ambience_lower = ambience.lower()
+    # Yelp a veces trae dicts como string, ejemplo: "{'romantic': True, 'intimate': False}"
+    if "romantic': true" in ambience_lower or 'romantic": true' in ambience_lower or "romantic: true" in ambience_lower:
+        return 1
+    if "intimate': true" in ambience_lower or 'intimate": true' in ambience_lower or "intimate: true" in ambience_lower:
+        return 1
+    return 0
+
+
 def filtrar_yelp(limite_registros=100000):
     ruta_business = os.path.join(_DATA, 'yelp_academic_dataset_business.json')
     ruta_reviews = os.path.join(_DATA, 'yelp_academic_dataset_review.json')
@@ -53,12 +69,21 @@ def filtrar_yelp(limite_registros=100000):
                 biz['price_level'] = _parse_price_level(attrs)
                 biz['is_accessible'] = _parse_bool_attr(attrs, 'WheelchairAccessible')
                 biz['outdoor'] = _parse_bool_attr(attrs, 'OutdoorSeating')
+                biz['is_good_for_kids'] = _parse_bool_attr(attrs, 'GoodForKids')
+                biz['is_romantic'] = _parse_ambience_romantic(attrs)
                 negocios.append(biz)
 
     df_biz = pd.DataFrame(negocios)
 
     # Asegurar que las columnas enriquecidas existan con tipos correctos
-    for col, default in [('price_level', 2), ('is_accessible', 0), ('outdoor', 0)]:
+    enrich_cols = [
+        ('price_level', 2), 
+        ('is_accessible', 0), 
+        ('outdoor', 0),
+        ('is_good_for_kids', 0),
+        ('is_romantic', 0)
+    ]
+    for col, default in enrich_cols:
         if col not in df_biz.columns:
             df_biz[col] = default
         df_biz[col] = df_biz[col].fillna(default).astype(int)
@@ -83,7 +108,7 @@ def filtrar_yelp(limite_registros=100000):
     df_biz.to_csv(os.path.join(_DATA, 'data_negocios_limpio.csv'), index=False)
     df_rev.to_csv(os.path.join(_DATA, 'data_reviews_limpio.csv'), index=False)
     print("Listo. CSVs creados en data/.")
-    print(f"  Columnas enriquecidas: price_level, is_accessible, outdoor")
+    print(f"  Columnas enriquecidas: price_level, is_accessible, outdoor, is_good_for_kids, is_romantic")
 
 
 if __name__ == "__main__":
