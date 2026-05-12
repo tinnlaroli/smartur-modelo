@@ -9,6 +9,7 @@ from math import sqrt
 from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from cf import predict_cf_pearson
+from evaluate import _infer_user_context
 
 
 def optimize(sample_size=1000):
@@ -27,14 +28,18 @@ def optimize(sample_size=1000):
     errores = 0
 
     total = len(test_sample)
-    print(f"Pre-computando {n_eval} predicciones CF y RF...")
+    print(f"Pre-computando contextos de usuario para {len(test_sample['user_id'].unique())} usuarios...")
+    user_contexts = {uid: _infer_user_context(uid, engine) for uid in test_sample['user_id'].unique()}
+
+    print(f"Pre-computando {n_eval} predicciones CF y RF con contexto...")
     for idx, (_, row) in enumerate(test_sample.iterrows()):
         if idx % 100 == 0:
             sys.stdout.write(f"\r  Progreso: {idx}/{total} ({idx/total*100:.0f}%)")
             sys.stdout.flush()
         try:
             p_cf = predict_cf_pearson(row['user_id'], row['business_id'], engine)
-            p_rf = float(context_model.predict_context([row['business_id']])[0])
+            user_ctx = user_contexts.get(row['user_id'])
+            p_rf = float(context_model.predict_with_context([row['business_id']], user_context=user_ctx)[0])
             if np.isnan(p_cf) or np.isnan(p_rf):
                 errores += 1
                 continue

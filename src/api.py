@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 
@@ -15,6 +16,7 @@ Conecta los flujos entre el Engine de Pearson y el Modelo Contextual de RF.
 from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from fusion import recommend_hybrid
+from poi_repository import fetch_pois, get_poi_connection, fetch_traveler_profile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartur-api")
@@ -27,6 +29,10 @@ context_model = None
 async def lifespan(app: FastAPI):
     """Carga los modelos pesados una sola vez al iniciar la API."""
     global engine, context_model
+    if os.getenv("SKIP_MODEL_BOOT") == "1":
+        logger.warning("SKIP_MODEL_BOOT=1: saltando carga de modelos en arranque")
+        yield
+        return
     try:
         logger.info("Cargando Motor de Pearson (Engine)...")
         engine = SmarturEngine()
@@ -48,13 +54,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SMARTUR Recommender API v2", version="2.1", lifespan=lifespan)
 
+_CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=[
-    #     "http://localhost",
-    #     ...
-    # ],
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -67,6 +71,7 @@ class RecItem(BaseModel):
     score: float
     pred_cf: float
     pred_rf: float
+    kind: str = 'poi'
 
 
 class RecommendationResponse(BaseModel):
@@ -76,7 +81,7 @@ class RecommendationResponse(BaseModel):
 
 
 class RecommendRequest(BaseModel):
-    alpha: float = 0.1
+    alpha: float = 0.4
     context: Optional[Dict[str, Any]] = None
     top_n: int = 5
 
@@ -92,13 +97,27 @@ def health():
         "engine_ready": engine is not None and engine.user_item_matrix is not None,
         "rf_ready": context_model is not None and getattr(context_model, 'is_fitted', False),
         "users_count": engine.user_item_matrix.shape[0] if engine and engine.user_item_matrix is not None else 0,
+        "skip_model_boot": os.getenv("SKIP_MODEL_BOOT") == "1",
     }
+
+
+@app.get("/health/poi-db")
+def health_poi_db():
+    """Chequea conectividad a Postgres para POIs locales."""
+    try:
+        with get_poi_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"POI DB unavailable: {e}")
 
 
 @app.get("/recommend/{user_id}", response_model=RecommendationResponse)
 def get_recommendation(
     user_id: str,
-    alpha: float = Query(0.1, ge=0.0, le=1.0),
+    alpha: float = Query(0.4, ge=0.0, le=1.0),
     top_n: int = Query(5, ge=1, le=50),
 ):
     if engine is None or context_model is None:
@@ -125,12 +144,24 @@ def post_recommendation(user_id: str, payload: RecommendRequest):
 
     try:
         logger.info(f"Recomendación POST para usuario: {user_id}")
+
+        # Merge traveler profile from DB with request context.
+        # Request context overrides DB profile (user's in-session adjustments take precedence).
+        merged_context = dict(payload.context) if payload.context else {}
+        try:
+            profile_ctx = fetch_traveler_profile(user_id)
+            if profile_ctx:
+                merged_context = {**profile_ctx, **merged_context}
+                logger.info(f"Perfil de viajero cargado para usuario {user_id}")
+        except Exception as e:
+            logger.warning(f"No se pudo cargar perfil de viajero para {user_id}: {e}")
+
         recs = recommend_hybrid(
             user_id=user_id,
             engine=engine,
             context_model=context_model,
             alpha=payload.alpha,
-            context=payload.context,
+            context=merged_context,
             top_n=payload.top_n,
         )
         return RecommendationResponse(

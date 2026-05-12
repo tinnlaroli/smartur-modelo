@@ -122,19 +122,24 @@ class SmarturEngine:
             list: Una lista que contiene los IDs en texto de negocios que podrían gustarle al usuario.
             Si el usuario no tiene historial, se le retornan los tópicos más populares de forma global.
         """
+        user_rated = set(
+            self.train_data[self.train_data['user_id'] == user_id]['business_id'].tolist()
+        )
+
         if self.user_item_matrix_index is None or user_id not in self.user_item_matrix_index:
             # Cold-start: Usuario nuevo sin ningún historial de interacciones en el dataset
             return (
                 self.train_data.groupby('business_id')['stars']
                 .count()
                 .sort_values(ascending=False)
+                .loc[lambda s: ~s.index.isin(user_rated)]
                 .head(top_n)
                 .index.tolist()
             )
 
         k = min(top_n, self.user_item_matrix.shape[0] - 1)
         user_idx = self.get_user_idx(user_id)
-        
+
         query = self.matrix_centered[user_idx]
         distances, indices = self.knn_model.kneighbors(
             query, n_neighbors=k
@@ -146,6 +151,7 @@ class SmarturEngine:
             candidates.groupby('business_id')['stars']
             .mean()
             .sort_values(ascending=False)
+            .loc[lambda s: ~s.index.isin(user_rated)]
             .head(top_n)
             .index.tolist()
         )

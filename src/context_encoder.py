@@ -7,18 +7,47 @@ Responsable de:
   - Features de match (budget_delta, interest_overlap, kids_match, romantic_match, tours_match)
 """
 
-# Mapeo de categorías Yelp por tipo de turismo
+# Mapeo de categorías por tipo de turismo.
+# Incluye términos Yelp (fallback desarrollo) y términos locales de Altas Montañas, Veracruz
+# (producción: categories_raw + categories_mapped de PostgreSQL).
 MAPEO_CATEGORIAS = {
-    'naturaleza': ['Parks', 'Botanical Gardens', 'Hiking',
-                   'Landmarks & Historical Buildings', 'Lakes'],
-    'aventura':   ['Active Life', 'Hiking', 'Rafting',
-                   'Mountain Biking', 'Tours'],
-    'gastronomico': ['Restaurants', 'Food', 'Cafes',
-                     'Traditional Mexican', 'Bakeries'],
-    'cultural':   ['Museums', 'Art Galleries', 'Arts & Entertainment',
-                   'Historical Tours', 'Festivals'],
-    'rural':      ['Hotels', 'Bed & Breakfast', 'Campgrounds',
-                   'Farm Stays', 'Guest Houses'],
+    'naturaleza': [
+        # Yelp
+        'Parks', 'Botanical Gardens', 'Hiking', 'Landmarks & Historical Buildings', 'Lakes',
+        # Local POI — categories_mapped
+        'nature',
+        # Local POI — categories_raw
+        'park', 'viewpoint', 'waterfall', 'volcano', 'mountain', 'botanical garden', 'hiking',
+    ],
+    'aventura': [
+        # Yelp
+        'Active Life', 'Hiking', 'Rafting', 'Mountain Biking', 'Tours',
+        # Local POI
+        'nature', 'park', 'hiking', 'volcano', 'mountain', 'viewpoint',
+    ],
+    'gastronomico': [
+        # Yelp
+        'Restaurants', 'Food', 'Cafes', 'Traditional Mexican', 'Bakeries',
+        # Local POI — categories_mapped
+        'gastronomy',
+        # Local POI — categories_raw
+        'market', 'local food', 'restaurant', 'food', 'coffee',
+    ],
+    'cultural': [
+        # Yelp
+        'Museums', 'Art Galleries', 'Arts & Entertainment', 'Historical Tours', 'Festivals',
+        # Local POI — categories_mapped
+        'culture',
+        # Local POI — categories_raw
+        'museum', 'history', 'hacienda', 'monument', 'cathedral', 'religion',
+        'zocalo', 'town square', 'sanctuary', 'architecture', 'neighborhood', 'science',
+    ],
+    'rural': [
+        # Yelp
+        'Hotels', 'Bed & Breakfast', 'Campgrounds', 'Farm Stays', 'Guest Houses',
+        # Local POI
+        'culture', 'hacienda',
+    ],
 }
 
 TOURISM_TYPES = list(MAPEO_CATEGORIAS.keys())

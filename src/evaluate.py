@@ -10,6 +10,57 @@ from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from cf import predict_cf_pearson
 from fusion import recommend_hybrid
+from context_encoder import MAPEO_CATEGORIAS
+
+
+def _infer_user_context(user_id, engine):
+    """
+    Deriva un contexto aproximado del usuario desde su historial de ratings en el
+    set de entrenamiento. Permite evaluar el sistema en condiciones cercanas a las
+    reales (con contexto) en lugar del modo cold-start sin preferencias.
+    """
+    user_train = engine.train_data[engine.train_data['user_id'] == user_id]
+    if user_train.empty:
+        return None
+
+    user_data = user_train.merge(
+        engine.df_biz[['business_id', 'categories', 'price_level', 'is_romantic', 'is_good_for_kids']],
+        on='business_id', how='left'
+    )
+    liked = user_data[user_data['stars'] >= 4]
+
+    cats_liked = ' '.join(liked['categories'].fillna('').str.lower())
+    tipos = [
+        t for t, cats in MAPEO_CATEGORIAS.items()
+        if any(c.lower() in cats_liked for c in cats)
+    ]
+
+    budget_mean = liked['price_level'].mean() if not liked.empty else 2.0
+    budget_val = int(round(float(budget_mean))) if not np.isnan(float(budget_mean)) else 2
+    budget_val = max(1, min(4, budget_val))
+    budget = {1: 'bajo', 2: 'medio', 3: 'alto', 4: 'premium'}[budget_val]
+
+    likes_romantic = bool(liked['is_romantic'].eq(1).any()) if 'is_romantic' in liked.columns else False
+    likes_kids = bool(liked['is_good_for_kids'].eq(1).any()) if 'is_good_for_kids' in liked.columns else False
+
+    if likes_kids:
+        group = 'familia'
+    elif likes_romantic:
+        group = 'pareja'
+    else:
+        group = 'solo'
+
+    return {
+        'tiposTurismo': tipos or ['cultural'],
+        'presupuesto_bucket': budget,
+        'group_type': group,
+        'edad_range': '25-34',
+        'wants_tours': False,
+        'needs_hotel': False,
+        'pref_food': True,
+        'requiere_accesibilidad': False,
+        'pref_outdoor': False,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +115,9 @@ def evaluar_predicciones(engine, context_model, sample_size=1000):
     errores = 0
 
     print(f"Evaluando {n_eval} de {n_test} interacciones del test set...")
+    print("  Pre-computando contextos de usuario...")
+    unique_users = test_sample['user_id'].unique()
+    user_contexts = {uid: _infer_user_context(uid, engine) for uid in unique_users}
 
     total = len(test_sample)
     for idx, (_, row) in enumerate(test_sample.iterrows()):
@@ -74,7 +128,8 @@ def evaluar_predicciones(engine, context_model, sample_size=1000):
 
         try:
             p_cf = predict_cf_pearson(row['user_id'], row['business_id'], engine)
-            p_rf = float(context_model.predict_context([row['business_id']])[0])
+            user_ctx = user_contexts.get(row['user_id'])
+            p_rf = float(context_model.predict_with_context([row['business_id']], user_context=user_ctx)[0])
             if np.isnan(p_cf) or np.isnan(p_rf):
                 errores += 1
                 continue
@@ -109,7 +164,7 @@ def evaluar_predicciones(engine, context_model, sample_size=1000):
     for nombre, preds in [
         ("Baseline (media global)", preds_baseline),
         ("CF (Pearson + KNN)", preds_cf),
-        ("RF (Random Forest)", preds_rf),
+        ("RF contextual (con contexto)", preds_rf),
         ("Hibrido v3 (a=0.1)", preds_hybrid),
     ]:
         rmse = sqrt(mean_squared_error(actuals, preds))
@@ -179,9 +234,10 @@ def evaluar_ranking(engine, context_model, n_users=100, k=5, relevance_threshold
             if len(relevant_ids) == 0:
                 continue  # Sin ítems relevantes, no contribuye a las métricas
 
-            # Generar recomendaciones
+            # Generar recomendaciones con contexto inferido del historial del usuario
+            user_ctx = _infer_user_context(user_id, engine)
             recs = recommend_hybrid(
-                user_id, engine, context_model, alpha=0.1, top_n=k * 2
+                user_id, engine, context_model, alpha=0.1, context=user_ctx, top_n=k * 2
             )
             rec_ids = [r['item_id'] for r in recs]
 
