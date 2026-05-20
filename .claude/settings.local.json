@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\MODELO\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(modelo\\\\Scripts\\\\python.exe --version)",
+      "Bash(modelo\\\\Scripts\\\\python.exe -c \"import sklearn, pandas, numpy, fastapi; print\\('deps OK'\\)\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\tinn\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-tinn-Documents-Dev-SMARTUR-DEVELOPMENT-MODELO\\\\98f068cb-2d73-4c4d-b4e9-f076176011c2\\\\tasks\\\\bv8oni8as.output\" -Wait)",
+      "PowerShell(cd \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\MODELO\\\\src\"; $env:PYTHONPATH = \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\MODELO\\\\src\"; ..\\\\modelo\\\\Scripts\\\\python.exe optimize_alpha.py 2>&1 | Select-String -Pattern \"alpha|RMSE|MAE|best|optimo|validas|Progreso|======\" -SimpleMatch)",
+      "PowerShell(cd \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\MODELO\\\\src\"; $env:PYTHONPATH = \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\MODELO\\\\src\"; ..\\\\modelo\\\\Scripts\\\\python.exe optimize_alpha.py 2>$null)",
+      "Bash(powershell -Command ' *)",
+      "Bash(docker exec smartur-postgres *)",
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "PowerShell(docker exec smartur-modelo *)",
+      "PowerShell(docker restart smartur-modelo *)",
+      "PowerShell(Start-Sleep -Seconds 15; for \\($i=0; $i -lt 20; $i++\\) { try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -TimeoutSec 5 -UseBasicParsing; $j = $r.Content | ConvertFrom-Json; if \\($j.rf_ready\\) { Write-Host \"RF ready! engine=$\\($j.engine_ready\\) rf=$\\($j.rf_ready\\)\"; break } else { Write-Host \"waiting... engine=$\\($j.engine_ready\\) rf=$\\($j.rf_ready\\)\" } } catch { Write-Host \"not up yet \\($i\\)\" }; Start-Sleep -Seconds 15 })",
+      "PowerShell($body = '{\"alpha\":0.0,\"context\":{\"tiposTurismo\":[\"naturaleza\"],\"group_type\":\"pareja\",\"presupuesto_bucket\":\"bajo\"},\"top_n\":5}'; $r = Invoke-WebRequest -Uri \"http://localhost:8000/recommend/test_user_1\" -Method POST -Body $body -ContentType \"application/json\" -UseBasicParsing; $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5)",
+      "PowerShell($body = '{\"alpha\":0.0,\"context\":{\"tiposTurismo\":[\"cultural\"],\"group_type\":\"familia\",\"presupuesto_bucket\":\"medio\"},\"top_n\":5}'; $r = Invoke-WebRequest -Uri \"http://localhost:8000/recommend/test_user_2\" -Method POST -Body $body -ContentType \"application/json\" -UseBasicParsing; $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5)",
+      "PowerShell($body = '{\"alpha\":0.0,\"context\":{\"tiposTurismo\":[\"gastronomico\"],\"group_type\":\"amigos\",\"presupuesto_bucket\":\"medio\"},\"top_n\":5}'; $r = Invoke-WebRequest -Uri \"http://localhost:8000/recommend/test_user_3\" -Method POST -Body $body -ContentType \"application/json\" -UseBasicParsing; $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5)",
+      "PowerShell(Start-Sleep -Seconds 20; for \\($i=0; $i -lt 15; $i++\\) { try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -TimeoutSec 5 -UseBasicParsing; $j = $r.Content | ConvertFrom-Json; if \\($j.rf_ready\\) { Write-Host \"UP: engine=$\\($j.engine_ready\\) rf=$\\($j.rf_ready\\)\"; break } else { Write-Host \"waiting engine=$\\($j.engine_ready\\) rf=$\\($j.rf_ready\\)\" } } catch { Write-Host \"not ready \\($i\\)\" }; Start-Sleep -Seconds 15 })",
+      "PowerShell($body = '{\"alpha\":0.0,\"context\":{\"tiposTurismo\":[\"gastronomico\"],\"group_type\":\"amigos\",\"needs_hotel\":true},\"top_n\":5}'; $r = Invoke-WebRequest -Uri \"http://localhost:8000/recommend/test_user_2\" -Method POST -Body $body -ContentType \"application/json\" -UseBasicParsing; $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5)",
+      "Bash(Get-ChildItem *)",
+      "Bash(npx tsc *)",
+      "PowerShell(npx --prefix \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\PLATAFORMA\" tsc --noEmit -p \"C:\\\\Users\\\\tinn\\\\Documents\\\\Dev\\\\SMARTUR\\\\DEVELOPMENT\\\\PLATAFORMA\\\\tsconfig.json\" 2>&1 | Select-Object -First 30)"
+    ]
+  }
+}
