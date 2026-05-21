@@ -1,7 +1,10 @@
+import logging
 import os
 import json
 import pandas as pd
 import psycopg2
+
+_logger = logging.getLogger("smartur-api")
 
 
 def _get_env(name, default=None):
@@ -144,6 +147,102 @@ def fetch_all_items(active_only=True):
     if services.empty:
         return pois
     return pd.concat([pois, services], ignore_index=True)
+
+
+def fetch_real_interactions(min_events: int = 2) -> pd.DataFrame:
+    """
+    Builds a user-item implicit rating matrix from live SMARTUR interaction data.
+
+    Signal weighting:
+      explicit star rating (user_rating)  → raw value 1-5 (dominates when present)
+      favorite (user_favorite)             → +4.0
+      visit    (user_visit)                → +2.5
+      detail_open (user_interaction)       → +0.4 per open, capped at 5
+      dwell    (user_interaction)          → +0.03 per second up to 120 s
+      skip     (user_interaction)          → -0.5 per skip, capped at 3
+
+    Returns DataFrame[user_id, item_id, implicit_score] clipped to [1, 5].
+    Returns empty DataFrame on failure so callers can fall back gracefully.
+    """
+    import numpy as np
+
+    sql = """
+        SELECT
+            combined.user_id::text,
+            combined.place_kind || '_' || combined.place_id::text AS item_id,
+            MAX(combined.explicit_rating) AS explicit_rating,
+            SUM(CASE WHEN combined.signal = 'favorite' THEN 1 ELSE 0 END) AS favorites,
+            SUM(CASE WHEN combined.signal = 'visit'    THEN 1 ELSE 0 END) AS visits,
+            SUM(CASE WHEN combined.signal = 'detail_open' THEN 1 ELSE 0 END) AS opens,
+            MAX(CASE WHEN combined.signal = 'dwell' THEN combined.dwell_ms ELSE 0 END) AS max_dwell_ms,
+            SUM(CASE WHEN combined.signal = 'skip'   THEN 1 ELSE 0 END) AS skips
+        FROM (
+            SELECT user_id, place_kind, place_id,
+                   'favorite'    AS signal,
+                   NULL::smallint AS explicit_rating,
+                   NULL::int      AS dwell_ms
+            FROM user_favorite
+            WHERE is_active = TRUE
+              AND place_kind IN ('svc', 'poi')
+
+            UNION ALL
+
+            SELECT user_id, place_kind, place_id,
+                   'visit', NULL, NULL
+            FROM user_visit
+            WHERE place_kind IN ('svc', 'poi')
+
+            UNION ALL
+
+            SELECT user_id, place_kind, place_id,
+                   event_type, NULL, dwell_ms
+            FROM user_interaction
+            WHERE event_type IN ('detail_open', 'dwell', 'skip')
+              AND place_kind IN ('svc', 'poi')
+
+            UNION ALL
+
+            SELECT user_id, place_kind, place_id,
+                   'rating', rating, NULL
+            FROM user_rating
+        ) combined
+        GROUP BY combined.user_id, combined.place_kind, combined.place_id
+        HAVING COUNT(*) >= %s
+    """
+    try:
+        with get_poi_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (min_events,))
+                cols = [d[0] for d in cur.description]
+                rows = cur.fetchall()
+    except Exception as exc:
+        _logger.warning(f"fetch_real_interactions: DB query failed — {exc}")
+        return pd.DataFrame(columns=["user_id", "item_id", "implicit_score"])
+
+    if not rows:
+        return pd.DataFrame(columns=["user_id", "item_id", "implicit_score"])
+
+    df = pd.DataFrame(rows, columns=cols)
+
+    explicit   = df["explicit_rating"].fillna(0).astype(float)
+    favorites  = df["favorites"].fillna(0).astype(float).clip(0, 1)
+    visits     = df["visits"].fillna(0).astype(float).clip(0, 1)
+    opens      = df["opens"].fillna(0).astype(float).clip(0, 5)
+    dwell_sec  = (df["max_dwell_ms"].fillna(0).astype(float) / 1000).clip(0, 120)
+    skips      = df["skips"].fillna(0).astype(float).clip(0, 3)
+
+    implicit_base = (
+        favorites * 4.0
+        + visits   * 2.5
+        + opens    * 0.4
+        + dwell_sec * 0.03
+        - skips    * 0.5
+    ).clip(1, 5)
+
+    has_explicit = explicit > 0
+    df["implicit_score"] = np.where(has_explicit, explicit, implicit_base).clip(1, 5)
+
+    return df[["user_id", "item_id", "implicit_score"]]
 
 
 def fetch_traveler_profile(user_id):

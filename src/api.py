@@ -16,6 +16,8 @@ Conecta los flujos entre el Engine de Pearson y el Modelo Contextual de RF.
 from engine import SmarturEngine
 from rf_model import SmarturContextModel
 from fusion import recommend_hybrid
+import json
+from pathlib import Path
 from poi_repository import fetch_pois, get_poi_connection, fetch_traveler_profile
 
 logging.basicConfig(level=logging.INFO)
@@ -172,6 +174,23 @@ def post_recommendation(user_id: str, payload: RecommendRequest):
     except Exception as e:
         logger.error(f"Error en POST recommend: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics")
+def get_metrics():
+    """
+    Returns the latest stored algorithm metrics for the admin dashboard.
+    Reads models/algorithm_metrics.json written by evaluate.py / optimize_alpha.py.
+    """
+    metrics_path = Path("models/algorithm_metrics.json")
+    if not metrics_path.exists():
+        raise HTTPException(status_code=404, detail="No hay métricas almacenadas todavía.")
+    try:
+        with open(metrics_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error leyendo métricas: {e}")
+        raise HTTPException(status_code=500, detail="Error al leer métricas.")
 
 
 @app.post("/train-rf")
