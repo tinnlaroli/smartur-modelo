@@ -54,6 +54,14 @@ src/
 3. `api.py` startup → loads CSVs via `engine.py`, trains/loads RF from `models/rf_context_yelp.joblib`
 4. `POST /recommend/{user_id}` → `fusion.py` hybrid pipeline → JSON response
 
+## API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/recommend/{user_id}` | Hybrid CF+RF recommendation with context |
+| GET | `/metrics` | Returns `models/algorithm_metrics.json` — latest RMSE/MAE/NDCG per algorithm. Used by PLATAFORMA ML dashboard. Returns 404 if no metrics file exists yet. |
+| GET | `/health` | Liveness check |
+
 ## Important gotchas
 
 - **Working directory**: All src scripts must be run from `src/` directory (relative imports like `from engine import SmarturEngine`). The Dockerfile sets `WORKDIR /app/src` for this reason.

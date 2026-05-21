@@ -45,6 +45,18 @@ Swagger UI disponible en: `http://localhost:8000/docs`
 
 ---
 
+## Endpoints disponibles
+
+### GET /metrics
+
+Retorna el archivo `models/algorithm_metrics.json` con las métricas de la última evaluación (RMSE, MAE, NDCG, Precision por algoritmo). Usado por el dashboard de ML Observabilidad en PLATAFORMA.
+
+```bash
+curl http://localhost:8000/metrics
+```
+
+---
+
 ## Consumo desde el Frontend
 
 ### Recomendaciones (POST) — Payload de Contexto Completo
